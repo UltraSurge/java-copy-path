@@ -1,0 +1,40 @@
+# Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# Lua
+luac.out
+
+# Testing
+.luacov
+luacov.*.out
+
+# Plugin manager cache
+lazy-lock.json
+packer_compiled.lua
+
+# Documentation build
+doc/tags
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log
