@@ -24,7 +24,7 @@
 
 ```lua
 return {
-  "UltraSurge/jcopy",
+  "UltraSurge/java-copy-path",
   ft = "java",
   keys = {
     {
@@ -46,7 +46,7 @@ return {
 
 ```lua
 use {
-  "UltraSurge/jcopy",
+  "UltraSurge/java-copy-path",
   ft = "java",
   config = function()
     require("java-copy-path").setup()
@@ -57,7 +57,7 @@ use {
 ### vim-plug
 
 ```vim
-Plug 'UltraSurge/jcopy'
+Plug 'UltraSurge/java-copy-path'
 ```
 
 然后在 init.lua 中添加：
