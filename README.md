@@ -82,14 +82,21 @@ require("java-copy-path").setup()
 插件会根据当前光标位置智能显示以下选项：
 
 ```
-╭──────── Select what to copy ────────╮
-│ > Package: com.example.myapp.service│
+╭──────── Copy Reference ─────────╮
+│ ▸ Package: com.example.myapp.service│
 │   Class: com.example.myapp.service.UserService│
 │   Current (Method): com.example.myapp.service.UserService.createUser│
 │   Relative Path: src/main/java/UserService.java│
 │   Absolute Path: /home/user/project/src/main/java/UserService.java│
 ╰─────────────────────────────────────╯
 ```
+
+**样式说明：**
+
+- **标签高亮** - `Package:`、`Class:` 等标签显示为紫色
+- **值高亮** - 包名、类名等值显示为绿色
+- **选中指示器** - `▸` 显示为黄色，当前选中行有背景高亮
+- **边框** - 使用蓝色圆角边框
 
 **选项说明：**
 
@@ -212,6 +219,14 @@ require("java-copy-path").setup({
   float_window = {
     border = "rounded",        -- 边框: single, double, rounded, solid, shadow
     title_pos = "center",      -- 标题位置: left, center, right
+    -- 高亮组配置（可选，使用默认配色）
+    highlights = {
+      window = "Normal:JavaCopyPathFloat,FloatBorder:JavaCopyPathBorder",
+      selected = "JavaCopyPathSelected",    -- 选中项背景
+      label = "JavaCopyPathLabel",          -- 标签 (Package:, Class: 等)
+      value = "JavaCopyPathValue",          -- 值
+      cursor = "JavaCopyPathCursor",        -- 选中指示器 (▸)
+    },
   },
 })
 ```

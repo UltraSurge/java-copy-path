@@ -8,6 +8,14 @@ M.config = {
 	float_window = {
 		border = "rounded",             -- 边框样式: single, double, rounded, solid, shadow
 		title_pos = "center",           -- 标题位置: left, center, right
+		-- 高亮组配置
+		highlights = {
+			window = "Normal:JavaCopyPathFloat,FloatBorder:JavaCopyPathBorder",  -- 窗口和边框高亮
+			selected = "JavaCopyPathSelected",    -- 选中项背景高亮
+			label = "JavaCopyPathLabel",          -- 标签高亮 (Package:, Class: 等)
+			value = "JavaCopyPathValue",          -- 值的高亮
+			cursor = "JavaCopyPathCursor",        -- 光标指示器 (>)
+		},
 	},
 	hide_options = {},                  -- 隐藏的选项列表
 }
@@ -203,11 +211,59 @@ local function copy_to_clipboard(text)
 	vim.fn.setreg('"', text)
 end
 
+---@description 设置高亮组（如果不存在则创建）
+local function setup_highlights()
+	local hl = M.config.float_window.highlights
+
+	-- 定义高亮组
+	local highlights = {
+		-- 浮动窗口边框 - 使用蓝色系
+		JavaCopyPathBorder = { fg = "#61afef", bold = true },
+		-- 浮动窗口背景 - 使用深色背景
+		JavaCopyPathFloat = { bg = "#1e222a" },
+		-- 选中项背景 - 使用高对比度的背景色
+		JavaCopyPathSelected = { bg = "#2c313c", bold = true },
+		-- 标签 - 使用紫色系 (Package:, Class: 等)
+		JavaCopyPathLabel = { fg = "#c678dd", bold = true },
+		-- 值 - 使用绿色系 (包名、类名等)
+		JavaCopyPathValue = { fg = "#98c379" },
+		-- 光标指示器 - 使用黄色
+		JavaCopyPathCursor = { fg = "#e5c07b", bold = true },
+		-- 窗口标题 - 使用青色
+		JavaCopyPathTitle = { fg = "#56b6c2", bold = true },
+	}
+
+	-- 设置高亮组
+	for name, opts in pairs(highlights) do
+		vim.api.nvim_set_hl(0, name, opts)
+	end
+end
+
+---@description 解析标签和值
+---将 "Package: com.example" 解析为标签和值
+---@param display string 显示文本
+---@return string label 标签 (如 "Package:")
+---@return string value 值 (如 "com.example")
+local function parse_display(display)
+	-- 匹配 "Label: value" 或 "Label (something): value" 格式
+	local label, value = display:match("^([^:]+:)%s*(.+)$")
+	if label and value then
+		return label, value
+	end
+	return "", display
+end
+
 ---@description 创建浮动窗口选择器
 ---显示一个居中的浮动窗口，让用户选择要复制的内容
 ---@param options table 选项列表，每个选项包含 display 和 value 字段
 ---@example options = {{display = "Package: com.example", value = "com.example"}}
 local function show_selector(options)
+	-- 设置高亮组
+	setup_highlights()
+
+	-- 创建命名空间用于高亮
+	local ns_id = vim.api.nvim_create_namespace("java_copy_path")
+
 	-- 创建一个临时的、不列出的缓冲区（false = 不列出, true = scratch buffer）
 	local buf = vim.api.nvim_create_buf(false, true)
 
@@ -222,8 +278,8 @@ local function show_selector(options)
 	end
 
 	-- 设置窗口宽度和高度
-	-- 宽度 = 最长文本 + 4（留出边距），但不超过屏幕宽度 - 10
-	local width = math.min(max_width + 4, vim.o.columns - 10)
+	-- 宽度 = 最长文本 + 6（留出边距和光标指示器空间），但不超过屏幕宽度 - 10
+	local width = math.min(max_width + 6, vim.o.columns - 10)
 	-- 高度 = 选项数量 + 2（标题和边框），但不超过屏幕高度 - 10
 	local height = math.min(#options + 2, vim.o.lines - 10)
 
@@ -242,17 +298,21 @@ local function show_selector(options)
 		col = col,                                  -- 水平位置
 		style = "minimal",                          -- 最小化样式（无行号、状态栏等）
 		border = M.config.float_window.border,      -- 边框样式（从配置读取）
-		title = " Select what to copy ",            -- 窗口标题
+		title = " Copy Reference ",                 -- 窗口标题
 		title_pos = M.config.float_window.title_pos, -- 标题位置（从配置读取）
 	}
 
 	-- 创建浮动窗口并进入该窗口（true = 进入窗口）
 	local win = vim.api.nvim_open_win(buf, true, opts)
 
+	-- 设置窗口高亮组
+	vim.wo[win].winhighlight = "Normal:JavaCopyPathFloat,FloatBorder:JavaCopyPathBorder,CursorLine:JavaCopyPathSelected"
+
 	-- 设置窗口选项
 	vim.wo[win].cursorline = true        -- 高亮当前行
 	vim.wo[win].number = false           -- 不显示行号
 	vim.wo[win].relativenumber = false   -- 不显示相对行号
+	vim.wo[win].wrap = false             -- 不换行
 
 	-- 当前选中的选项索引（从 1 开始）
 	local selected = 1
@@ -260,19 +320,51 @@ local function show_selector(options)
 	---@description 渲染选项列表到缓冲区
 	---更新浮动窗口的显示内容，标记当前选中项
 	local function render()
+		-- 清除之前的高亮
+		vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+
 		local lines = {}
 
 		-- 遍历所有选项，生成显示文本
 		for i, opt in ipairs(options) do
-			-- 当前选中的选项前面显示 "> "，其他显示 "  "
-			local prefix = i == selected and "> " or "  "
+			-- 当前选中的选项前面显示 "▸ "，其他显示 "  "
+			local prefix = i == selected and "▸ " or "  "
 			local display = opt.display or opt.value
 			table.insert(lines, prefix .. display)
 		end
 
 		-- 将生成的文本行设置到缓冲区
-		-- 参数: buffer, start_line, end_line, strict_indexing, lines
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+
+		-- 应用高亮
+		for i, line in ipairs(lines) do
+			local line_idx = i - 1  -- 0-indexed
+
+			-- 高亮光标指示器 (▸)
+			if i == selected then
+				vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathCursor", line_idx, 0, 2)
+			end
+
+			-- 解析标签和值
+			local display = options[i].display or options[i].value
+			local label, value = parse_display(display)
+
+			if label ~= "" then
+				-- 计算标签位置 (考虑前缀 "▸ " 或 "  ")
+				local label_start = 2
+				local label_end = label_start + #label
+				local value_start = label_end + 1
+				local value_end = value_start + #value
+
+				-- 高亮标签
+				vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathLabel", line_idx, label_start, label_end)
+				-- 高亮值
+				vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathValue", line_idx, value_start, value_end)
+			else
+				-- 没有标签格式，整行使用值的高亮
+				vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathValue", line_idx, 2, -1)
+			end
+		end
 
 		-- 移动光标到当前选中的行（行号, 列号）
 		vim.api.nvim_win_set_cursor(win, { selected, 0 })
