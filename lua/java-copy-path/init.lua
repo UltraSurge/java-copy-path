@@ -236,10 +236,39 @@ local function truncate_text(text, max_width)
 	local ellipsis_width = display_width(ellipsis)
 	local available_width = max_width - ellipsis_width
 
-	-- 分别截断前后部分
+	-- 分别计算前后部分各占多少宽度
 	local half_width = math.floor(available_width / 2)
-	local left_part = text:sub(1, vim.fn.strcharpart(text, 0, half_width))
-	local right_part = text:sub(-vim.fn.strcharpart(text, 0, half_width))
+
+	-- 获取前半部分（从左往右取 half_width 宽度的字符）
+	local left_chars = 0
+	local left_bytes = 0
+	local current_width = 0
+	for i = 1, #text do
+		local char = text:sub(i, i)
+		local char_width = display_width(char)
+		if current_width + char_width > half_width then
+			break
+		end
+		current_width = current_width + char_width
+		left_bytes = i
+		left_chars = left_chars + 1
+	end
+
+	-- 获取后半部分（从右往左取 half_width 宽度的字符）
+	local right_start = #text
+	current_width = 0
+	for i = #text, 1, -1 do
+		local char = text:sub(i, i)
+		local char_width = display_width(char)
+		if current_width + char_width > half_width then
+			break
+		end
+		current_width = current_width + char_width
+		right_start = i
+	end
+
+	local left_part = text:sub(1, left_bytes)
+	local right_part = text:sub(right_start)
 
 	return left_part .. ellipsis .. right_part
 end
