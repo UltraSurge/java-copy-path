@@ -211,7 +211,38 @@ local function copy_to_clipboard(text)
 	vim.fn.setreg('"', text)
 end
 
----@description 设置高亮组（如果不存在则创建）
+---@description 计算字符串的显示宽度
+---处理多字节字符，返回实际的显示列数
+---@param str string 要计算的字符串
+---@return number 显示宽度
+local function display_width(str)
+	-- 使用 vim.fn.strdisplaywidth 获取实际显示宽度
+	return vim.fn.strdisplaywidth(str)
+end
+
+---@description 截断过长的文本
+---如果文本超过指定宽度，在中间添加省略号
+---@param text string 要截断的文本
+---@param max_width number 最大宽度
+---@return string 截断后的文本
+local function truncate_text(text, max_width)
+	local width = display_width(text)
+	if width <= max_width then
+		return text
+	end
+
+	-- 预留省略号的空间
+	local ellipsis = "..."
+	local ellipsis_width = display_width(ellipsis)
+	local available_width = max_width - ellipsis_width
+
+	-- 分别截断前后部分
+	local half_width = math.floor(available_width / 2)
+	local left_part = text:sub(1, vim.fn.strcharpart(text, 0, half_width))
+	local right_part = text:sub(-vim.fn.strcharpart(text, 0, half_width))
+
+	return left_part .. ellipsis .. right_part
+end
 local function setup_highlights()
 	local hl = M.config.float_window.highlights
 
@@ -231,6 +262,8 @@ local function setup_highlights()
 		JavaCopyPathCursor = { fg = "#e5c07b", bold = true },
 		-- 窗口标题 - 使用青色
 		JavaCopyPathTitle = { fg = "#56b6c2", bold = true },
+		-- 底部提示文字 - 使用灰色
+		JavaCopyPathHint = { fg = "#5c6370", italic = true },
 	}
 
 	-- 设置高亮组
@@ -279,9 +312,12 @@ local function show_selector(options)
 
 	-- 设置窗口宽度和高度
 	-- 宽度 = 最长文本 + 6（留出边距和光标指示器空间），但不超过屏幕宽度 - 10
-	local width = math.min(max_width + 6, vim.o.columns - 10)
-	-- 高度 = 选项数量 + 2（标题和边框），但不超过屏幕高度 - 10
-	local height = math.min(#options + 2, vim.o.lines - 10)
+	-- 同时确保宽度足够显示底部提示 "Enter: Confirm | Esc: Cancel"
+	local hint_text = "Enter: Confirm | Esc: Cancel"
+	local min_width_for_hint = #hint_text + 4
+	local width = math.min(math.max(max_width + 6, min_width_for_hint), vim.o.columns - 10)
+	-- 高度 = 选项数量 + 3（标题、底部提示和边框），但不超过屏幕高度 - 10
+	local height = math.min(#options + 3, vim.o.lines - 10)
 
 	-- 计算窗口位置（居中显示）
 	-- row = 垂直居中位置
@@ -324,21 +360,33 @@ local function show_selector(options)
 		vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
 
 		local lines = {}
+		local display_lines = {}  -- 存储原始显示文本用于高亮计算
+
+		-- 计算可用显示宽度（窗口宽度 - 前缀 - 边距）
+		local max_display_width = width - 6
 
 		-- 遍历所有选项，生成显示文本
 		for i, opt in ipairs(options) do
 			-- 当前选中的选项前面显示 "▸ "，其他显示 "  "
 			local prefix = i == selected and "▸ " or "  "
 			local display = opt.display or opt.value
-			table.insert(lines, prefix .. display)
+
+			-- 截断过长的文本
+			local truncated = truncate_text(display, max_display_width)
+
+			table.insert(lines, prefix .. truncated)
+			table.insert(display_lines, { full = display, shown = truncated, prefix = prefix })
 		end
 
 		-- 将生成的文本行设置到缓冲区
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
 		-- 应用高亮
-		for i, line in ipairs(lines) do
+		for i, line_info in ipairs(display_lines) do
 			local line_idx = i - 1  -- 0-indexed
+			local display = line_info.full
+			local shown = line_info.shown
+			local prefix = line_info.prefix
 
 			-- 高亮光标指示器 (▸)
 			if i == selected then
@@ -346,25 +394,43 @@ local function show_selector(options)
 			end
 
 			-- 解析标签和值
-			local display = options[i].display or options[i].value
 			local label, value = parse_display(display)
 
 			if label ~= "" then
-				-- 计算标签位置 (考虑前缀 "▸ " 或 "  ")
-				local label_start = 2
-				local label_end = label_start + #label
-				local value_start = label_end + 1
-				local value_end = value_start + #value
+				-- 使用 vim.fn.byteidx 获取正确的字节位置
+				local prefix_width = #prefix  -- "▸ " 或 "  " 都是 2 字节
 
-				-- 高亮标签
-				vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathLabel", line_idx, label_start, label_end)
-				-- 高亮值
-				vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathValue", line_idx, value_start, value_end)
+				-- 计算标签的字节位置
+				local label_byte_start = prefix_width
+				local label_byte_end = label_byte_start + #label
+
+				-- 如果文本被截断了，需要调整高亮范围
+				local shown_label, shown_value = parse_display(shown)
+				if shown_label ~= "" then
+					-- 重新计算基于实际显示文本的位置
+					label_byte_end = label_byte_start + #shown_label
+
+					-- 高亮标签
+					vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathLabel", line_idx, label_byte_start, label_byte_end)
+
+					-- 高亮值（从标签结束到行尾）
+					vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathValue", line_idx, label_byte_end, -1)
+				else
+					-- 没有标签格式（可能是被截断了），整行使用值的高亮
+					vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathValue", line_idx, prefix_width, -1)
+				end
 			else
 				-- 没有标签格式，整行使用值的高亮
-				vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathValue", line_idx, 2, -1)
+				vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathValue", line_idx, #prefix, -1)
 			end
 		end
+
+		-- 添加底部提示行
+		local hint = "Enter: Confirm | Esc: Cancel"
+		local hint_line = string.rep(" ", math.floor((width - #hint) / 2)) .. hint
+		vim.api.nvim_buf_set_lines(buf, #lines, -1, false, { hint_line })
+		-- 为提示行添加高亮
+		vim.api.nvim_buf_add_highlight(buf, ns_id, "JavaCopyPathHint", #lines, 0, -1)
 
 		-- 移动光标到当前选中的行（行号, 列号）
 		vim.api.nvim_win_set_cursor(win, { selected, 0 })

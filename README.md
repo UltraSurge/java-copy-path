@@ -88,6 +88,8 @@ require("java-copy-path").setup()
 │   Current (Method): com.example.myapp.service.UserService.createUser│
 │   Relative Path: src/main/java/UserService.java│
 │   Absolute Path: /home/user/project/src/main/java/UserService.java│
+│                                 │
+│     Enter: Confirm | Esc: Cancel│
 ╰─────────────────────────────────────╯
 ```
 
@@ -97,6 +99,7 @@ require("java-copy-path").setup()
 - **值高亮** - 包名、类名等值显示为绿色
 - **选中指示器** - `▸` 显示为黄色，当前选中行有背景高亮
 - **边框** - 使用蓝色圆角边框
+- **底部提示** - 显示操作快捷键（灰色斜体）
 
 **选项说明：**
 
